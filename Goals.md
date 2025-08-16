@@ -1,0 +1,7 @@
+- A brief **project overview**
+- The **tech stack**
+- The list of **features** (Add, Delete, Update, Search)
+- A section describing **how to convert the saved notes into .md format** using JavaScript
+- A note on how to **push the .md files to GitHub** using the GitHub REST API
+- Use a tech stack which should be minimal and easy to understand and use in all th evnironments 
+- Use **localStorage** to store the notes
