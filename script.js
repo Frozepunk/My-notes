@@ -20,12 +20,32 @@ class CTFNotesApp {
 
     // Initialize all event listeners
     initializeEventListeners() {
-        // Category filter buttons
-        document.querySelectorAll('.category-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                this.setActiveCategory(e.target.dataset.category);
+        try {
+            // Ensure delete confirm is always bound early and safely
+            const confirmDeleteEarly = document.getElementById('confirmDeleteBtn');
+            if (confirmDeleteEarly && !confirmDeleteEarly.dataset.listenerAdded) {
+                confirmDeleteEarly.addEventListener('click', () => {
+                    this.confirmDeleteNote();
+                });
+                confirmDeleteEarly.dataset.listenerAdded = 'true';
+            }
+
+            // Delegated fallback: handle clicks on Delete in modal even if direct binding failed
+            document.addEventListener('click', (e) => {
+                const btn = e.target.closest && e.target.closest('#confirmDeleteBtn');
+                if (btn) {
+                    e.preventDefault();
+                    this.confirmDeleteNote();
+                }
             });
-        });
+
+            // Category filter buttons
+            document.querySelectorAll('.category-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const category = e.currentTarget?.dataset?.category;
+                    if (category) this.setActiveCategory(category);
+                });
+            });
 
         // Search input
         document.getElementById('searchInput').addEventListener('input', (e) => {
@@ -68,7 +88,8 @@ class CTFNotesApp {
         // View options
         document.querySelectorAll('.view-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
-                this.setView(e.target.dataset.view);
+                const view = e.currentTarget?.dataset?.view;
+                if (view) this.setView(view);
             });
         });
 
@@ -126,10 +147,14 @@ class CTFNotesApp {
             this.closeImportModal();
         });
 
-        // Delete confirmation
-        document.getElementById('confirmDeleteBtn').addEventListener('click', () => {
-            this.confirmDeleteNote();
-        });
+        // Delete confirmation (kept for redundancy but guarded above)
+        const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+        if (confirmDeleteBtn && !confirmDeleteBtn.dataset.listenerAdded) {
+            confirmDeleteBtn.addEventListener('click', () => {
+                this.confirmDeleteNote();
+            });
+            confirmDeleteBtn.dataset.listenerAdded = 'true';
+        }
 
         // Import confirmation
         document.getElementById('confirmImportBtn').addEventListener('click', () => {
@@ -146,6 +171,37 @@ class CTFNotesApp {
             this.handleTextImport(e);
         });
 
+        // Fallback: ensure editor buttons have listeners even if initEditorEventListeners hasn't run yet
+        const headerSaveBtnInit = document.getElementById('saveNoteBtn');
+        if (headerSaveBtnInit && !headerSaveBtnInit.dataset.listenerAdded) {
+            headerSaveBtnInit.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.saveNote();
+            });
+            headerSaveBtnInit.dataset.listenerAdded = 'true';
+        }
+
+        const footerSaveBtnInit = document.getElementById('saveNoteBtnFooter');
+        if (footerSaveBtnInit && !footerSaveBtnInit.dataset.listenerAdded) {
+            footerSaveBtnInit.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.saveNote();
+            });
+            footerSaveBtnInit.dataset.listenerAdded = 'true';
+        }
+
+        const deleteBtnInit = document.getElementById('deleteNoteBtn');
+        if (deleteBtnInit && !deleteBtnInit.dataset.listenerAdded) {
+            deleteBtnInit.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (this.editingNoteId) {
+                    this.openDeleteModal(this.editingNoteId);
+                }
+            });
+            deleteBtnInit.dataset.listenerAdded = 'true';
+        }
+
         // Close shortcuts help
         document.getElementById('closeShortcuts').addEventListener('click', () => {
             this.closeShortcutsHelp();
@@ -160,17 +216,8 @@ class CTFNotesApp {
                 this.closeImportModal();
             }
         });
-
-        // Keyboard shortcuts
-        document.addEventListener('keydown', (e) => {
-            this.handleKeyboardShortcuts(e);
-        });
-
-        // Show shortcuts help on first visit
-        if (!localStorage.getItem('shortcutsShown')) {
-            setTimeout(() => {
-                this.showShortcutsHelp();
-            }, 2000);
+        } catch (err) {
+            console.error('initializeEventListeners failed:', err);
         }
     }
 
@@ -595,7 +642,15 @@ class CTFNotesApp {
             'pwn': 'Pwn Challenges',
             'misc': 'Miscellaneous'
         };
-        
+        const notesTitleEl = document.getElementById('notesTitle');
+        if (notesTitleEl) {
+            notesTitleEl.textContent = titleMap[category] || 'All Notes';
+        }
+
+        // Re-render notes and update counts based on the new filter
+        this.renderNotes();
+        this.updateNotesCount();
+    }
 
     // Initialize editor event listeners once
     initEditorEventListeners() {
@@ -862,6 +917,10 @@ class CTFNotesApp {
         console.log('Opening delete modal for note:', noteId);
         this.editingNoteId = noteId;
         const deleteModal = document.getElementById('deleteModal');
+        const confirmBtn = document.getElementById('confirmDeleteBtn');
+        if (confirmBtn) {
+            confirmBtn.dataset.noteId = noteId;
+        }
         if (deleteModal) {
             deleteModal.style.display = 'block';
             console.log('Delete modal displayed');
@@ -874,18 +933,33 @@ class CTFNotesApp {
     closeDeleteModal() {
         console.log('Closing delete modal');
         const deleteModal = document.getElementById('deleteModal');
+        const confirmBtn = document.getElementById('confirmDeleteBtn');
+        if (confirmBtn && confirmBtn.dataset.noteId) {
+            delete confirmBtn.dataset.noteId;
+        }
         if (deleteModal) {
             deleteModal.style.display = 'none';
         }
-        this.editingNoteId = null;
     }
 
     // Confirm and execute note deletion
     confirmDeleteNote() {
-        console.log('Confirming deletion of note:', this.editingNoteId);
-        if (this.editingNoteId) {
-            this.deleteNote(this.editingNoteId);
+        const confirmBtn = document.getElementById('confirmDeleteBtn');
+        const noteIdFromBtn = confirmBtn?.dataset?.noteId;
+        const targetId = noteIdFromBtn || this.editingNoteId;
+        console.log('Confirming deletion of note:', targetId);
+        if (targetId) {
+            this.deleteNote(targetId);
             this.closeDeleteModal();
+            // Reset editing state and close editor if open
+            this.editingNoteId = null;
+            if (confirmBtn && confirmBtn.dataset.noteId) {
+                delete confirmBtn.dataset.noteId;
+            }
+            const noteEditor = document.getElementById('noteEditor');
+            if (noteEditor && noteEditor.classList.contains('show')) {
+                this.closeNoteModal();
+            }
         } else {
             console.error('No note ID to delete');
         }
